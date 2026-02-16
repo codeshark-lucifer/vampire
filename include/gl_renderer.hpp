@@ -8,7 +8,7 @@
 constexpr str FONT_FILE_PATH     = "assets/fonts/arial.ttf";
 constexpr str SHADER_SCENE_VERT  = "assets/shaders/scene.vert";
 constexpr str SHADER_SCENE_FRAG  = "assets/shaders/scene.frag";
-constexpr str ATLAS_TEXTURE_PATH = "assets/textures/sample.png";
+constexpr str ATLAS_TEXTURE_PATH = "assets/sprites/sample.png";
 
 struct GLContext
 {

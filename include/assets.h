@@ -37,47 +37,9 @@ inline Sprite getSprite(SpriteID spriteID)
         break;
     }
 
-    case SPRITE_DICE:
-    {
-        sprite.offset = {16, 0};
-        sprite.size = {16, 16};
-        break;
-    }
-
-    case SPRITE_COIN:
-    {
-        sprite.offset = {16, 0};
-        sprite.size = {16, 16};
-        break;
-    }
-
-    case SPRITE_CELESTE:
-    {
-      sprite.offset = {128, 0};
-      sprite.size = {17, 20};
-      sprite.frameCount = 4;
-      break;
-    }
-
-    case SPRITE_CELESTE_RUN:
-    {
-      sprite.offset = {128, 20};
-      sprite.size = {17, 20};
-      sprite.frameCount = 5;
-      break;
-    }
-
-    case SPRITE_CELESTE_JUMP:
-    {
-      sprite.offset = {128, 40};
-      sprite.size = {17, 20};
-      sprite.frameCount = 4;
-      break;
-    }
-
     case SPRITE_REDBALL:
     {
-        sprite.offset = {32, 0};
+        sprite.offset = {16, 0};
         sprite.size = {16, 16};
         break;
     }
