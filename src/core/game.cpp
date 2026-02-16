@@ -2,14 +2,17 @@
 
 float fixedTime = 0.0f;
 
-void InitGame()
+// start game 
+void init()
 {
 }
 
+// user input
 void simulate()
 {
 }
 
+// physics
 void step()
 {
 }
@@ -25,7 +28,7 @@ void Update(float dt)
 {
     if (!gameState->initialized)
     {
-        InitGame();
+        init();
         gameState->initialized = true;
     }
 

@@ -21,7 +21,7 @@ struct GameState
 extern GameState *gameState;
 static ParticleSystem particle;
 
-void InitGame();
+void init();
 void simulate();
 void step();
 void render();
