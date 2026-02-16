@@ -9,7 +9,6 @@
 > Hello Triangles
 > Batch Buffers > Intanced
 
-
 > Game : 
     1. DrawSprite(Vec2 pos, DrawData data)
     2. DrawText(char* text, TextData data)
@@ -20,3 +19,10 @@
     - Transforms
     - UITransforms
     - Material
+
+**Vector of Isometric:
+> x' = x + y
+> y' = (-x + y) * 0.5
+
+> x = 0.5x' - y'
+> y = 0.5x1 + y'

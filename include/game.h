@@ -6,16 +6,28 @@
 
 constexpr float FIXED_DELTATIME = 1.0f / 60.0f;
 
-constexpr int WORLD_WIDTH = 950;
-constexpr int WORLD_HEIGHT = 540;
 constexpr int TILESIZE = 32;
-constexpr int GRID_X = (WORLD_WIDTH + TILESIZE - 1) / TILESIZE;
-constexpr int GRID_Y = (WORLD_HEIGHT + TILESIZE - 1) / TILESIZE;
-constexpr ivec2 WORLD_GRID = {GRID_X, GRID_Y};
+constexpr ivec2 GRID_WORLD = {3, 3};
+
+struct Tile
+{
+    bool isVisible{false};
+};
 
 struct GameState
 {
     bool initialized{false};
+    Tile tilesWorld[GRID_WORLD.x][GRID_WORLD.y];
+    GameState()
+    {
+        for (int y = 0; y < GRID_WORLD.x; y++)
+        {
+            for (int x = 0; x < GRID_WORLD.y; x++)
+            {
+                tilesWorld[x][y] = Tile{};
+            }
+        }
+    }
 };
 
 extern GameState *gameState;
