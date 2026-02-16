@@ -43,8 +43,13 @@ struct Input
     bool keysPrev[256]{false}; // previous frame states
 
     // Mouse
-    vec2 mousePosScreen{0, 0};   // pixel coordinates
-    vec2 mousePos{0, 0};         // maybe world coordinates later
+    vec2 mousePosScreen; // For UI (0,0 to internal resolution)
+    vec2 mousePosWorld;  // For Gameplay (Screen pos + Camera pos)
+    
+    // Add this helper
+    void UpdateMouseWorld(vec2 cameraPos) {
+        mousePosWorld = mousePosScreen + cameraPos;
+    }
     bool mouseButtons[5]{false}; // left, right, middle, extra1, extra2
     bool mouseButtonsPrev[5]{false};
 

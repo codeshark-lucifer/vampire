@@ -26,10 +26,10 @@ add_executable(app
     src/platform/win32.cpp
 )
 
-if(WIN32)
-    # Build as a GUI application (no console window) on Windows
-    set_target_properties(app PROPERTIES WIN32_EXECUTABLE TRUE)
-endif()
+# if(WIN32)
+#     # Build as a GUI application (no console window) on Windows
+#     set_target_properties(app PROPERTIES WIN32_EXECUTABLE TRUE)
+# endif()
 
 target_include_directories(app PRIVATE
     ${CMAKE_SOURCE_DIR}/include

@@ -8,7 +8,7 @@ int main()
 
     gameState = BumpAlloc<GameState>(&persistentStorage);
 
-    CreateWindowPlatform(956, 540, "atlas - engine");
+    CreateWindowPlatform(DEFAULT_GAME_WIDTH, DEFAULT_GAME_HEIGHT, "atlas - engine");
     SetColorTitleBar({0.1f, 0.1f, 0.1f, 1.0f}, COLOR_WHITE);
 
     glInit(&persistentStorage);
@@ -17,7 +17,7 @@ int main()
     {
         Event event;
         PollEvent(&event);
-
+        input->UpdateMouseWorld(renderData->camera.pos);
         Update(deltaTime);
         std::sort(renderData->transforms.begin(), renderData->transforms.end(),
                   [](const Transform &a, const Transform &b)

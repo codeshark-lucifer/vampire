@@ -1,6 +1,7 @@
 #include "platform/win32.h"
 
 #include <windows.h>
+#include <windowsx.h>
 // #include <GL/gl.h>
 #include <glad/glad.h>
 #include <GL/wglext.h>
@@ -23,6 +24,19 @@ bool keys[256] = {};
 bool active = true;
 bool fullscreen = false;
 float deltaTime = 0.0f;
+
+static UINT GetWindowDPI(HWND hwnd)
+{
+    auto user32 = GetModuleHandleA("user32.dll");
+    if (user32)
+    {
+        typedef UINT(WINAPI * GetDpiForWindow_t)(HWND);
+        auto pGetDpiForWindow = (GetDpiForWindow_t)GetProcAddress(user32, "GetDpiForWindow");
+        if (pGetDpiForWindow)
+            return pGetDpiForWindow(hwnd);
+    }
+    return 96; // Default DPI
+}
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -48,9 +62,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     // Mouse
     case WM_MOUSEMOVE:
-        input->mousePosScreen.x = (float)LOWORD(lParam);
-        input->mousePosScreen.y = (float)HIWORD(lParam);
+    {
+        if (input && renderData)
+        {
+            RECT cr;
+            GetClientRect(hwnd, &cr);
+            float clientW = (float)(cr.right - cr.left);
+            float clientH = (float)(cr.bottom - cr.top);
+
+            float mouseX = (float)GET_X_LPARAM(lParam);
+            float mouseY = (float)GET_Y_LPARAM(lParam);
+
+            // Normalize 0.0 -> 1.0
+            float normX = mouseX / clientW;
+            float normY = mouseY / clientH;
+
+            // Map to logical camera dimensions (the units used in your Ortho matrix)
+            input->mousePosScreen.x = normX * renderData->camera.dimensions.x;
+            input->mousePosScreen.y = normY * renderData->camera.dimensions.y;
+        }
         break;
+    }
 
     case WM_LBUTTONDOWN:
         input->mouseButtons[0] = true;
@@ -89,27 +121,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_SIZE:
     {
-        RECT crect;
-        GetClientRect(hwnd, &crect);
-        int w = crect.right - crect.left;
-        int h = crect.bottom - crect.top;
+        int width = LOWORD(lParam);
+        int height = HIWORD(lParam);
 
-        // Adjust for DPI if available (GetDpiForWindow introduced on newer Windows)
-        UINT dpi = 96;
-        auto user32 = GetModuleHandleA("user32.dll");
-        if (user32)
-        {
-            typedef UINT(WINAPI *GetDpiForWindow_t)(HWND);
-            GetDpiForWindow_t pGetDpiForWindow = (GetDpiForWindow_t)GetProcAddress(user32, "GetDpiForWindow");
-            if (pGetDpiForWindow)
-                dpi = pGetDpiForWindow(hwnd);
-        }
+        UINT dpi = GetWindowDPI(hwnd);
         float scale = (float)dpi / 96.0f;
-        int pixelW = (int)roundf(w * scale);
-        int pixelH = (int)roundf(h * scale);
 
-        if (input)
-            input->screenSize = {pixelW, pixelH};
+        int pixelW = (int)(width * scale);
+        int pixelH = (int)(height * scale);
+
+        // if (input)
+        //     input->screenSize = {pixelW, pixelH}; // Removed (float) casts
         if (renderData)
             renderData->OnResize(pixelW, pixelH);
         return 0;
@@ -143,45 +165,16 @@ void PollEvent(Event *event)
             running = false;
 
         TranslateMessage(&event->msg);
-        DispatchMessage(&event->msg);
+        DispatchMessage(&event->msg); // This calls WndProc for you!
     }
 
-    {
-        auto now = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float> elapsed = now - lastTime;
-        deltaTime = elapsed.count();
-        lastTime = now;
-    }
+    // Time tracking is fine here
+    auto now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<float> elapsed = now - lastTime;
+    deltaTime = elapsed.count();
+    lastTime = now;
 
-    {
-        switch (event->msg.message)
-        {
-        case WM_KEYDOWN:
-            input->keys[event->msg.wParam] = true;
-            break;
-        case WM_KEYUP:
-            input->keys[event->msg.wParam] = false;
-            break;
-        case WM_LBUTTONDOWN:
-            input->mouseButtons[MOUSE_LEFT] = true;
-            break;
-        case WM_LBUTTONUP:
-            input->mouseButtons[MOUSE_LEFT] = false;
-            break;
-        case WM_RBUTTONDOWN:
-            input->mouseButtons[MOUSE_RIGHT] = true;
-            break;
-        case WM_RBUTTONUP:
-            input->mouseButtons[MOUSE_RIGHT] = false;
-            break;
-        case WM_MBUTTONDOWN:
-            input->mouseButtons[MOUSE_MIDDLE] = true;
-            break;
-        case WM_MBUTTONUP:
-            input->mouseButtons[MOUSE_MIDDLE] = false;
-            break;
-        }
-    }
+    // DELETE the switch statement that was here.
 }
 
 void SwapBuffersWindow()
@@ -191,7 +184,10 @@ void SwapBuffersWindow()
 
 Window CreateWindowPlatform(int width, int height, const char *name)
 {
-    input->screenSize = {width, height};
+    // input->screenSize = {width, height}; // Initial set based on creation params, will be overwritten by default game resolution
+
+    // Set input->screenSize to the fixed internal game resolution
+    input->screenSize = {(int)DEFAULT_GAME_WIDTH, (int)DEFAULT_GAME_HEIGHT};
     hInstance = GetModuleHandleA(NULL);
 
     WNDCLASSA wc = {};
@@ -218,7 +214,7 @@ Window CreateWindowPlatform(int width, int height, const char *name)
     auto user32 = GetModuleHandleA("user32.dll");
     if (user32)
     {
-        typedef UINT(WINAPI *GetDpiForWindow_t)(HWND);
+        typedef UINT(WINAPI * GetDpiForWindow_t)(HWND);
         GetDpiForWindow_t pGetDpiForWindow = (GetDpiForWindow_t)GetProcAddress(user32, "GetDpiForWindow");
         if (pGetDpiForWindow)
             dpi = pGetDpiForWindow(window);
@@ -227,8 +223,8 @@ Window CreateWindowPlatform(int width, int height, const char *name)
     int clientW = (int)roundf(w * scale);
     int clientH = (int)roundf(h * scale);
 
-    if (input)
-        input->screenSize = {clientW, clientH};
+    // if (input)
+    //     input->screenSize = {clientW, clientH}; // input->screenSize should represent the internal game resolution, not the window size
     if (renderData)
         renderData->OnResize(clientW, clientH);
 

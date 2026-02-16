@@ -13,7 +13,7 @@ Tile *getTile(int x, int y)
 
 vec2 getTilePos(int x, int y)
 {
-    float tileWidth  = (float)TILESIZE;
+    float tileWidth = (float)TILESIZE;
     float tileHeight = TILESIZE * 0.5f;
 
     float halfW = tileWidth * 0.5f;
@@ -30,16 +30,58 @@ vec2 getTilePos(int x, int y)
     float isoMinY = 0;
     float isoMaxY = ((GRID_WORLD.x - 1) + (GRID_WORLD.y - 1)) * halfH;
 
-    float gridWidth  = isoMaxX - isoMinX;
+    float gridWidth = isoMaxX - isoMinX;
     float gridHeight = isoMaxY - isoMinY;
 
     // --- Center on screen ---
-    float offsetX = (input->screenSize.x - gridWidth) * 0.5f - isoMinX;
-    float offsetY = (input->screenSize.y - gridHeight) * 0.5f;
+    float offsetX = (renderData->camera.dimensions.x - gridWidth) * 0.5f - isoMinX;
+    float offsetY = (renderData->camera.dimensions.y - gridHeight) * 0.5f;
 
     return vec2(isoX + offsetX, isoY + offsetY);
 }
 
+vec2 getMouseWorldPos()
+{
+    vec2 mouse = input->mousePosScreen;
+    return mouse;
+}
+ivec2 getGridPos(vec2 screenPos)
+{
+    float tileWidth = (float)TILESIZE;
+    float tileHeight = TILESIZE * 0.5f;
+
+    float halfW = tileWidth * 0.5f;
+    float halfH = tileHeight * 0.5f;
+
+    // 1. Recompute the offsets exactly as you did in the forward function
+    float isoMinX = (0 - (GRID_WORLD.y - 1)) * halfW;
+    float isoMaxX = ((GRID_WORLD.x - 1) - 0) * halfW;
+    float isoMinY = 0;
+    float isoMaxY = ((GRID_WORLD.x - 1) + (GRID_WORLD.y - 1)) * halfH;
+
+    float gridWidth = isoMaxX - isoMinX;
+    float gridHeight = isoMaxY - isoMinY;
+
+    float offsetX = (renderData->camera.dimensions.x - gridWidth) * 0.5f - isoMinX;
+    float offsetY = (renderData->camera.dimensions.y - gridHeight) * 0.5f;
+
+    // 2. Remove the offsets to get back to "Pure Isometric" space
+    float isoX = screenPos.x - offsetX;
+    float isoY = screenPos.y - offsetY;
+
+    // 3. Solve the linear equations
+    float x = (isoX / halfW + isoY / halfH) * 0.5f;
+    float y = (isoY / halfH - isoX / halfW) * 0.5f;
+
+    // 4. Round or Floor depending on your needs
+    // We use floor to ensure we get the tile index the point is inside of.
+    return ivec2((int)floor(x - 0.3f), (int)floor(y + 0.5f));
+}
+ivec2 getTileAtMouse()
+{
+    vec2 mouse = getMouseWorldPos();
+    return getGridPos(mouse);
+}
 
 // start game
 void init()
@@ -59,26 +101,44 @@ void step()
 // draw
 void render()
 {
-    for (int y = 0; y < GRID_WORLD.x; y++)
+    // 1. Get the tile coordinate currently under the mouse
+    ivec2 hoveredTile = getTileAtMouse();
+
+    for (int y = 0; y < GRID_WORLD.y; y++)
     {
-        for (int x = 0; x < GRID_WORLD.y; x++)
+        for (int x = 0; x < GRID_WORLD.x; x++)
         {
             Tile *tile = getTile(x, y);
             if (!tile)
                 continue;
+
             Sprite sprite = getSprite(SPRITE_TILETEMP);
             Transform trans = {};
-            trans.color = vec4(1.0f);
+
+            // 2. CHECK HOVER: If this specific tile is the one under the mouse, make it RED
+            if (x == hoveredTile.x && y == hoveredTile.y)
+            {
+                trans.color = vec4(1.0f, 0.0f, 0.0f, 1.0f); // Red tint
+            }
+            else
+            {
+                trans.color = vec4(1.0f, 1.0f, 1.0f, 1.0f); // Normal white
+            }
+
             trans.ioffset = sprite.offset;
             trans.isize = sprite.size;
             trans.pos = getTilePos(x, y);
             trans.size = vec2(TILESIZE);
+
+            // This now pushes the tile with the correct color
             DrawQuad(trans);
         }
     }
 
-    vec2 mouse = input->mousePosScreen;
-    DrawSprite(SPRITE_REDBALL, mouse - vec2(4.0f), vec2(8.0f));
+    // 3. Draw the mouse cursor (The red ball)
+    // Keep this white (1.0f) so it stays its original texture color
+    vec2 mouseWorld = getMouseWorldPos();
+    DrawSprite(SPRITE_REDBALL, mouseWorld - vec2(4.0f), vec2(8.0f), vec3(1.0f));
 }
 
 // Update Entry
