@@ -40,11 +40,6 @@ vec2 getTilePos(int x, int y)
     return vec2(isoX + offsetX, isoY + offsetY);
 }
 
-vec2 getMouseWorldPos()
-{
-    vec2 mouse = input->mousePosScreen;
-    return mouse;
-}
 ivec2 getGridPos(vec2 screenPos)
 {
     float tileWidth = (float)TILESIZE;
@@ -77,9 +72,10 @@ ivec2 getGridPos(vec2 screenPos)
     // We use floor to ensure we get the tile index the point is inside of.
     return ivec2((int)floor(x - 0.3f), (int)floor(y + 0.5f));
 }
+
 ivec2 getTileAtMouse()
 {
-    vec2 mouse = getMouseWorldPos();
+    vec2 mouse = input->mousePosScreen;
     return getGridPos(mouse);
 }
 
@@ -114,21 +110,22 @@ void render()
 
             Sprite sprite = getSprite(SPRITE_TILETEMP);
             Transform trans = {};
+            trans.ioffset = sprite.offset;
+            trans.isize = sprite.size;
+            trans.pos = getTilePos(x, y);
+            trans.size = vec2(TILESIZE);
 
             // 2. CHECK HOVER: If this specific tile is the one under the mouse, make it RED
             if (x == hoveredTile.x && y == hoveredTile.y)
             {
                 trans.color = vec4(1.0f, 0.0f, 0.0f, 1.0f); // Red tint
+                trans.pos.y -= 0.8f;
             }
             else
             {
                 trans.color = vec4(1.0f, 1.0f, 1.0f, 1.0f); // Normal white
             }
 
-            trans.ioffset = sprite.offset;
-            trans.isize = sprite.size;
-            trans.pos = getTilePos(x, y);
-            trans.size = vec2(TILESIZE);
 
             // This now pushes the tile with the correct color
             DrawQuad(trans);
@@ -137,8 +134,23 @@ void render()
 
     // 3. Draw the mouse cursor (The red ball)
     // Keep this white (1.0f) so it stays its original texture color
-    vec2 mouseWorld = getMouseWorldPos();
+    vec2 mouseWorld = input->mousePosScreen;
     DrawSprite(SPRITE_REDBALL, mouseWorld - vec2(4.0f), vec2(8.0f), vec3(1.0f));
+
+    // 1. Get the grid index under the mouse
+    ivec2 tileCoords = getTileAtMouse();
+
+    // 2. Get the base screen position (Level 0)
+    vec2 basePos = getTilePos(tileCoords.x, tileCoords.y);
+
+    // 3. Apply a height offset for Level 1
+    // We subtract because -Y is "Up" in screen space.
+    // Usually, this is half the tile height or a specific "Layer Height".
+    float layerHeight = TILESIZE * 0.5f;
+    vec2 level1Pos = basePos - vec2(0.0f, layerHeight);
+
+    // 4. Draw the sprite at the new elevated position
+    DrawSprite(SPRITE_TILETEMP1, level1Pos, vec2(TILESIZE), vec3(1.0f));
 }
 
 // Update Entry

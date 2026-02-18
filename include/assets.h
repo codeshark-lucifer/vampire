@@ -6,6 +6,7 @@ enum SpriteID
     SPRITE_WHITE,
     SPRITE_REDBALL,
     SPRITE_TILETEMP,
+    SPRITE_TILETEMP1,
     SPRITE_COIN,
 
     SPRITE_COUNT
@@ -42,6 +43,12 @@ inline Sprite getSprite(SpriteID spriteID)
     case SPRITE_TILETEMP:
     {
         sprite.offset = {32, 0};
+        sprite.size = {32, 32};
+        break;
+    }
+    case SPRITE_TILETEMP1:
+    {
+        sprite.offset = {64, 0};
         sprite.size = {32, 32};
         break;
     }
