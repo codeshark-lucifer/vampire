@@ -31,17 +31,26 @@ void callback_exit()
 
 struct State
 {
+    const char *application_name;
+    const char *engine_name;
+
     const char *window_title;
-    int width, height;
+    int window_width, window_height;
     bool window_resizeable;
     bool window_fullscreen;
+
     u32 api_version;
+    u32 queueFamily;
 
     GLFWmonitor *window_monitor;
     GLFWwindow *window;
 
     VkAllocationCallbacks *allocator;
     VkInstance instance;
+    VkPhysicalDevice physicalDevice;
+    VkSurfaceKHR surface;
+    VkDevice device;
+    VkQueue queue;
 };
 
 void create_window(State *state)
@@ -49,19 +58,25 @@ void create_window(State *state)
     PANIC(!glfwInit(), "Failed to Initialize GLFW.");
     // 1. Set hints
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, state->window_resizeable ? GLFW_TRUE : GLFW_FALSE);
-    // We use this (*state). is same as state->
+    glfwWindowHint(GLFW_RESIZABLE, (*state).window_resizeable ? GLFW_TRUE : GLFW_FALSE);
+    // We use this (*state). is same as (*state).
 
-    (*state).window_monitor = state->window_fullscreen ? glfwGetPrimaryMonitor() : NULL;
+    if ((*state).window_fullscreen)
+    {
+        (*state).window_monitor = glfwGetPrimaryMonitor();
 
+        GLFWvidmode *mode = glfwGetVideoMode((*state).window_monitor);
+        (*state).window_width = mode->width;
+        (*state).window_height = mode->height;
+    }
     // 2. CREATE THE WINDOW FIRST
-    state->window = glfwCreateWindow(
-        (*state).width, (*state).height,
+    (*state).window = glfwCreateWindow(
+        (*state).window_width, (*state).window_height,
         (*state).window_title,
         (*state).window_monitor,
         NULL);
 
-    if (!state->window)
+    if (!(*state).window)
     {
         glfwTerminate();
         exit(EXIT_FAILURE);
@@ -69,7 +84,7 @@ void create_window(State *state)
 
     // 3. NOW apply the Windows-specific attributes
 #if defined(_WIN32) || defined(_WIN64)
-    HWND hwnd = glfwGetWin32Window(state->window);
+    HWND hwnd = glfwGetWin32Window((*state).window);
 
     BOOL useDarkMode = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
@@ -90,11 +105,11 @@ void create_instance(State *state)
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,
-        .pApplicationName = state->window_title,
+        .pApplicationName = (*state).application_name,
         .applicationVersion = VK_MAKE_VERSION(0, 0, 1),
-        .pEngineName = "AtlasEngine",
+        .pEngineName = (*state).engine_name,
         .engineVersion = VK_MAKE_VERSION(0, 0, 1),
-        .apiVersion = state->api_version};
+        .apiVersion = (*state).api_version};
 
     VkInstanceCreateInfo createinfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -106,20 +121,118 @@ void create_instance(State *state)
         .enabledExtensionCount = extension_counter,
         .ppEnabledExtensionNames = extensions};
 
-    PANIC(vkCreateInstance(&createinfo, state->allocator, &state->instance), "Failed to create instance.");
+    PANIC(vkCreateInstance(&createinfo, (*state).allocator, &(*state).instance), "Failed to create instance.");
 }
 
 void create_logger(State *state)
 {
     u32 api_version, variant, major, minor, patch;
-    vkEnumerateInstanceVersion(&api_version);
+    PANIC(vkEnumerateInstanceVersion(&api_version), "Failed to load enumerate instance version.");
+
     variant = VK_API_VERSION_VARIANT(api_version);
     major = VK_API_VERSION_MAJOR(api_version);
     minor = VK_API_VERSION_MINOR(api_version);
     patch = VK_API_VERSION_PATCH(api_version);
 
-    printf("Vulkan API %i.%i.%i.%i\n", variant, major, minor, patch);
-    printf("GLFW %s\n", glfwGetVersionString());
+    printf("*Start Engine:\n\t- Vulkan API %i.%i.%i.%i\n", variant, major, minor, patch);
+    printf("\t- GLFW %s\n", glfwGetVersionString());
+}
+
+void select_physical_device(State *state)
+{
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(state->instance, &deviceCount, nullptr);
+
+    if (deviceCount == 0)
+    {
+        PANIC(true, "Failed to find GPUs with Vulkan support!");
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(state->instance, &deviceCount, devices.data());
+
+    // Instead of just taking the first one, we usually "score" them
+    for (const auto &device : devices)
+    {
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+        // Example: Favor Discrete GPUs over Integrated ones
+        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+        {
+            state->physicalDevice = device;
+            return;
+        }
+    }
+
+    // Fallback: Just take the first one if no discrete GPU was found
+    state->physicalDevice = devices[0];
+}
+
+void create_surface(State *state)
+{
+    PANIC(glfwCreateWindowSurface(state->instance, state->window, state->allocator, &state->surface), "Couldn't create window surface.");
+}
+
+void select_queue_family(State *state)
+{
+    state->queueFamily = UINT32_MAX;
+    u32 count;
+
+    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &count, NULL);
+
+    array<VkQueueFamilyProperties> queueFamilies(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &count, queueFamilies.data());
+
+    for (int queueIdx = 0; queueIdx < count; ++queueIdx)
+    {
+        VkQueueFamilyProperties properties = queueFamilies[queueIdx];
+        if (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT && glfwGetPhysicalDevicePresentationSupport(state->instance, state->physicalDevice, queueIdx))
+        {
+            state->queueFamily = queueIdx;
+            break;
+        }
+    }
+
+    PANIC(state->queueFamily == UINT32_MAX, "Could'nt find suitable queue family.");
+}
+
+void create_device(State *state)
+{
+    // Define these as actual variables so we can take their addresses safely
+    float queuePriority = 1.0f;
+    const char *deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+    VkDeviceQueueCreateInfo queueCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .queueFamilyIndex = state->queueFamily,
+        .queueCount = 1,
+        .pQueuePriorities = &queuePriority // Safe now
+    };
+
+    VkDeviceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // Note: Fix this sType! (See below)
+        .pNext = nullptr,
+        .flags = 0,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .enabledLayerCount = 0,
+        .ppEnabledLayerNames = nullptr,
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames = deviceExtensions, // Safe now
+        .pEnabledFeatures = nullptr,
+    };
+
+    PANIC(vkCreateDevice(state->physicalDevice, &createInfo, state->allocator, &state->device), "Couldn't create device.");
+}
+
+void get_queue(State *state)
+{
+    u32 queueFamilyIndex = 0;
+
+    vkGetDeviceQueue(state->device, queueFamilyIndex, 0, &state->queue);
 }
 
 void init(State *state)
@@ -131,12 +244,19 @@ void init(State *state)
     create_instance(state);
     create_logger(state);
 
-    glfwSetKeyCallback(state->window, callback_key);
+    select_physical_device(state);
+    create_surface(state);
+    select_queue_family(state);
+    create_device(state);
+
+    get_queue(state);
+
+    glfwSetKeyCallback((*state).window, callback_key);
 }
 
 void loop(State *state)
 {
-    while (!glfwWindowShouldClose(state->window))
+    while (!glfwWindowShouldClose((*state).window))
     {
         glfwPollEvents();
     }
@@ -144,18 +264,25 @@ void loop(State *state)
 
 void cleanup(State *state)
 {
+    vkDestroyDevice((*state).device, (*state).allocator);
+    vkDestroySurfaceKHR((*state).instance, (*state).surface, (*state).allocator);
     glfwDestroyWindow((*state).window);
     (*state).window = nullptr;
+    vkDestroyInstance((*state).instance, (*state).allocator);
 }
 
 int main()
 {
     State state = {
+        .application_name = "Vampire",
+        .engine_name = "AtlasEngine",
+
         .window_title = "vamprie",
-        .width = 956,
-        .height = 540,
+        .window_width = 956,
+        .window_height = 540,
         .window_resizeable = false,
         .window_fullscreen = false,
+
         .api_version = VK_API_VERSION_1_4};
 
     init(&state);
