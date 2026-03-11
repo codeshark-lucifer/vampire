@@ -51,6 +51,14 @@ struct State
     VkSurfaceKHR surface;
     VkDevice device;
     VkQueue queue;
+
+    VkSwapchainKHR swapchain;
+    VkFormat swapchainFormat;
+    VkExtent2D swapchainExtent;
+
+    uint32_t imageCount;
+    VkImage* swapchainImages;
+    VkImageView* swapchainImageViews;
 };
 
 void create_window(State *state)
@@ -65,7 +73,7 @@ void create_window(State *state)
     {
         (*state).window_monitor = glfwGetPrimaryMonitor();
 
-        GLFWvidmode *mode = glfwGetVideoMode((*state).window_monitor);
+        const GLFWvidmode *mode = glfwGetVideoMode((*state).window_monitor);
         (*state).window_width = mode->width;
         (*state).window_height = mode->height;
     }
@@ -235,6 +243,107 @@ void get_queue(State *state)
     vkGetDeviceQueue(state->device, queueFamilyIndex, 0, &state->queue);
 }
 
+void create_swapchain(State *state)
+{
+    // 1. Query basic surface capabilities
+    VkSurfaceCapabilitiesKHR capabilities;
+    PANIC(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(state->physicalDevice, state->surface, &capabilities),
+          "Couldn't get capabilities.");
+
+    // 2. Choose the best surface format
+    uint32_t formatCount;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, NULL);
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, formats.data());
+
+    VkSurfaceFormatKHR selectedFormat = formats[0];
+    for (const auto& f : formats) {
+        if (f.format == VK_FORMAT_B8G8R8A8_SRGB && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            selectedFormat = f;
+            break;
+        }
+    }
+
+    // 3. Choose Present Mode
+    uint32_t presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentModeCount, NULL);
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentModeCount, presentModes.data());
+
+    VkPresentModeKHR selectedMode = VK_PRESENT_MODE_FIFO_KHR;
+    for (const auto& m : presentModes) {
+        if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
+            selectedMode = m;
+            break;
+        }
+    }
+
+    // 4. Determine Image Count
+    uint32_t imageCount = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
+        imageCount = capabilities.maxImageCount;
+    }
+
+    // 5. Build the Create Info
+    VkSwapchainKHR newSwapchain;
+    VkSwapchainCreateInfoKHR createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = state->surface,
+        .minImageCount = imageCount,
+        .imageFormat = selectedFormat.format,
+        .imageColorSpace = selectedFormat.colorSpace,
+        .imageExtent = capabilities.currentExtent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .preTransform = capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = selectedMode,
+        .clipped = VK_TRUE,
+        .oldSwapchain = state->swapchain
+    };
+
+    PANIC(vkCreateSwapchainKHR(state->device, &createInfo, state->allocator, &newSwapchain), 
+          "Failed to create swapchain!");
+
+    // Destroy old swapchain if recreating
+    if (state->swapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(state->device, state->swapchain, state->allocator);
+    }
+
+    state->swapchain = newSwapchain;
+    state->swapchainFormat = selectedFormat.format;
+    state->swapchainExtent = capabilities.currentExtent;
+
+    // 6. Retrieve Images
+    vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, NULL);
+    state->swapchainImages = (VkImage*)malloc(sizeof(VkImage) * state->imageCount);
+    vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapchainImages);
+
+    // 7. Create Image Views
+    
+    state->swapchainImageViews = (VkImageView*)malloc(sizeof(VkImageView) * state->imageCount);
+    for (uint32_t i = 0; i < state->imageCount; i++) {
+        VkImageViewCreateInfo viewInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = state->swapchainImages[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = state->swapchainFormat,
+            .components = {
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY, .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY, .a = VK_COMPONENT_SWIZZLE_IDENTITY
+            },
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0, .levelCount = 1,
+                .baseArrayLayer = 0, .layerCount = 1
+            }
+        };
+        PANIC(vkCreateImageView(state->device, &viewInfo, state->allocator, &state->swapchainImageViews[i]), 
+              "Failed to create image view!");
+    }
+}
+
 void init(State *state)
 {
     glfwSetErrorCallback(callback_erorr);
@@ -251,6 +360,8 @@ void init(State *state)
 
     get_queue(state);
 
+    create_swapchain(state);
+
     glfwSetKeyCallback((*state).window, callback_key);
 }
 
@@ -264,11 +375,41 @@ void loop(State *state)
 
 void cleanup(State *state)
 {
-    vkDestroyDevice((*state).device, (*state).allocator);
-    vkDestroySurfaceKHR((*state).instance, (*state).surface, (*state).allocator);
-    glfwDestroyWindow((*state).window);
-    (*state).window = nullptr;
-    vkDestroyInstance((*state).instance, (*state).allocator);
+    // Wait for the GPU to finish before destroying things
+    if (state->device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(state->device);
+    }
+
+    // 1. Destroy Image Views (must happen before swapchain)
+    if (state->swapchainImageViews) {
+        for (uint32_t i = 0; i < state->imageCount; i++) {
+            vkDestroyImageView(state->device, state->swapchainImageViews[i], state->allocator);
+        }
+        free(state->swapchainImageViews);
+        state->swapchainImageViews = nullptr;
+    }
+
+    // 2. Destroy Swapchain
+    if (state->swapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(state->device, state->swapchain, state->allocator);
+        state->swapchain = VK_NULL_HANDLE;
+    }
+
+    // 3. Free the images handle array (the images themselves are destroyed by the swapchain)
+    if (state->swapchainImages) {
+        free(state->swapchainImages);
+        state->swapchainImages = nullptr;
+    }
+
+    // 4. Standard cleanup
+    vkDestroyDevice(state->device, state->allocator);
+    vkDestroySurfaceKHR(state->instance, state->surface, state->allocator);
+    
+    if (state->window) {
+        glfwDestroyWindow(state->window);
+    }
+
+    vkDestroyInstance(state->instance, state->allocator);
 }
 
 int main()
